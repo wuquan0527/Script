@@ -1,0 +1,35 @@
+{
+  "version": "1.1.0",
+  "name": "AI Relay Usage",
+  "icon": "wallet.pass.fill",
+  "permissions": null,
+  "localizedDescriptions": {
+    "en": "",
+    "es": "",
+    "ja": "",
+    "ru": "",
+    "pt": "",
+    "it": "",
+    "zh": "",
+    "de": ""
+  },
+  "contributors": [],
+  "intentInputTypes": [],
+  "color": "rgba(88, 86, 214, 1)",
+  "description": "通用 AI 中转站余额 / 已用金额 / 请求次数查询面板：填入接口地址与 API Key 即可查询",
+  "localizedNames": {
+    "es": "",
+    "it": "",
+    "de": "",
+    "ja": "",
+    "en": "",
+    "zh": "AI Relay Usage",
+    "fr": "",
+    "pt": "",
+    "ru": ""
+  },
+  "author": null,
+  "runInApp": false,
+  "iconImage": null,
+  "entry": "index.tsx"
+}
