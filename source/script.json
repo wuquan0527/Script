@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "name": "AI Relay Usage",
   "icon": "wallet.pass.fill",
   "permissions": null,
@@ -16,7 +16,7 @@
   "contributors": [],
   "intentInputTypes": [],
   "color": "rgba(88, 86, 214, 1)",
-  "description": "通用 AI 中转站余额 / 已用金额 / 请求次数查询面板：填入接口地址与 API Key 即可查询",
+  "description": "通用 AI 中转站余额 / 已用金额 / 请求次数 / 今日签到状态查询面板：填入接口地址与 API Key 即可查询",
   "localizedNames": {
     "es": "",
     "it": "",

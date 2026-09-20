@@ -355,6 +355,18 @@ function ProviderCard({
           {d.requests != null && (
             <BalanceRow label={"请求次数"} value={`${formatRequests(d.requests)} 次`} />
           )}
+          {d.checkin?.enabled && (
+            <BalanceRow
+              label={"今日签到"}
+              value={d.checkin.checkedToday ? "已签到" : "未签到"}
+            />
+          )}
+          {d.checkin?.enabled && d.checkin.monthCount != null && (
+            <BalanceRow
+              label={"本月签到"}
+              value={`${formatRequests(d.checkin.monthCount)} 次`}
+            />
+          )}
           {d.total != null && (
             <BalanceRow label={"总额度"} value={formatAmount(d.total, d.unit)} />
           )}

@@ -59,8 +59,28 @@ export interface BalanceResult {
    * 其他供应商不返回该字段（undefined → 界面显示 --）
    */
   requests?: number | null;
+  /**
+   * 签到信息（New API / Veloera 谱系）。
+   * - new-api：GET /api/user/checkin → data.stats.checked_in_today
+   * - Veloera：GET /api/user/check_in_status → data.can_check_in（true 表示今日未签到）
+   * 未部署签到功能或接口无权限时为 null（界面隐藏该项）。
+   */
+  checkin?: CheckinInfo | null;
   planName?: string;
   extra?: string;
+}
+
+export interface CheckinInfo {
+  /** 服务端是否启用了签到功能 */
+  enabled: boolean;
+  /** 今日是否已签到 */
+  checkedToday: boolean;
+  /** 本月签到次数（new-api 提供，可选） */
+  monthCount?: number | null;
+  /** 累计签到次数（可选） */
+  totalCount?: number | null;
+  /** 接口形态来源，便于排错 */
+  source?: string;
 }
 
 /** 单个中转供应商配置 */
@@ -335,7 +355,7 @@ function parseNewApi(json: any): BalanceResult {
       used,
       // 总额以接口返回的 total_granted 为准，不自行计算
       total: num(d.total_granted),
-      // 令牌用量接口一般不返回次数，交由 enrichNewApiRequests 兜底
+      // 令牌用量接口一般不返回次数，交由 enrichNewApiExtras 兜底
       requests: num(d.request_count ?? d.total_requests),
       unit: "USD",
       planName: d.name ? `令牌 ${d.name}` : "API Key 配额",
@@ -689,13 +709,13 @@ class API {
           const result = parseNewApi(json);
           // 订阅账单形态：账单接口不含已用额度，再从 usage 端点补上
           if (result.used == null && result.total != null) {
-            return await this.enrichNewApiRequests(
+            return await this.enrichNewApiExtras(
               base,
               subHeaders,
               await this.enrichSubscriptionUsage(base, subHeaders, result),
             );
           }
-          return await this.enrichNewApiRequests(base, headers, result);
+          return await this.enrichNewApiExtras(base, headers, result);
         }
         case "newapi_sub":
           return parseNewApiSubscription(json);
@@ -711,7 +731,7 @@ class API {
           try {
             const subJson = await this.queryJson(base, subPath, subHeaders);
             const result = parseNewApi(subJson);
-            return await this.enrichNewApiRequests(
+            return await this.enrichNewApiExtras(
               base,
               subHeaders,
               await this.enrichSubscriptionUsage(base, subHeaders, result),
@@ -756,18 +776,38 @@ class API {
   }
 
   /**
-   * 补充「请求次数」：
+   * 补充「请求次数」与「签到状态」（两者并发，避免拖慢小组件时间预算）。：
    * - new-api 的 /api/user/self 自带 data.request_count，无需额外请求；
    * - 旧版 one-api / 令牌用量端点不含该字段时，回退 GET /api/log/self?p=1&page_size=1
-   *   取分页 total（每条调用日志 = 一次请求）。
-   * 接口无权限或不存在时静默保持 null（界面显示 --），不影响余额展示。
+   *   取分页 total（每条调用日志 = 一次请求）；
+   * - 签到状态探测 /api/user/checkin（new-api）→ /api/user/check_in_status（Veloera）。
+   * 任一接口无权限或不存在时静默保持未知（界面隐藏 / 显示 --），不影响余额展示。
    */
-  private async enrichNewApiRequests(
+  private async enrichNewApiExtras(
     base: string,
     headers: Record<string, string>,
     result: BalanceResult,
   ): Promise<BalanceResult> {
-    if (result.requests != null) return result;
+    const tasks: Array<Promise<void>> = [];
+    if (result.requests == null) {
+      tasks.push(this.fetchRequestCount(base, headers).then((v) => {
+        result.requests = v ?? null;
+      }));
+    }
+    if (result.checkin == null) {
+      tasks.push(this.fetchCheckin(base, headers).then((v) => {
+        result.checkin = v ?? null;
+      }));
+    }
+    if (tasks.length > 0) await Promise.all(tasks);
+    return result;
+  }
+
+  /** 请求次数兜底：/api/log/self 分页 total */
+  private async fetchRequestCount(
+    base: string,
+    headers: Record<string, string>,
+  ): Promise<number | null> {
     try {
       const json = await this.queryJson(
         base,
@@ -778,11 +818,71 @@ class API {
       const total = num(
         json?.data?.total ?? json?.total ?? json?.data?.count ?? json?.count,
       );
-      if (total != null && total >= 0) result.requests = total;
+      return total != null && total >= 0 ? total : null;
     } catch {
       // 无权限 / 接口不存在 / 网关非 JSON → 保持未知
+      return null;
     }
-    return result;
+  }
+
+  /** 签到状态探测：依次尝试 new-api 与 Veloera 两种形态 */
+  private async fetchCheckin(
+    base: string,
+    headers: Record<string, string>,
+  ): Promise<CheckinInfo | null> {
+    // 1) new-api：/api/user/checkin?month=YYYY-MM
+    try {
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const json = await this.queryJson(
+        base,
+        `/api/user/checkin?month=${month}`,
+        headers,
+        6,
+      );
+      const stats = json?.data?.stats ?? json?.data ?? null;
+      if (stats && typeof stats === "object") {
+        const raw = (stats as any).checked_in_today;
+        if (raw === true || raw === false) {
+          return {
+            enabled: true,
+            checkedToday: raw,
+            monthCount: num((stats as any).checkin_count),
+            totalCount: num((stats as any).total_checkins),
+            source: "new-api",
+          };
+        }
+      }
+      // 服务端明确回「签到功能未启用」→ 记录为未启用（界面隐藏）
+      const msg = String(json?.message ?? "");
+      if (json?.success === false && msg.includes("签到")) {
+        return { enabled: false, checkedToday: false, source: "new-api" };
+      }
+    } catch {
+      // 接口不存在 → 尝试下一种形态
+    }
+
+    // 2) Veloera 系：/api/user/check_in_status → data.can_check_in
+    try {
+      const json = await this.queryJson(
+        base,
+        "/api/user/check_in_status",
+        headers,
+        6,
+      );
+      const d = json?.data ?? null;
+      const can = d ? (d as any).can_check_in : null;
+      if (can === true || can === false) {
+        return {
+          enabled: true,
+          checkedToday: can === false,
+          source: "veloera",
+        };
+      }
+    } catch {
+      // 无签到能力 → 保持未知
+    }
+    return null;
   }
 
   /** GET 一个路径并返回解析后的 JSON（非 200 / 非 JSON 时抛错） */

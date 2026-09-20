@@ -5,7 +5,7 @@ export interface AppDisplaySettings {
   reloadMinutes: number;
 }
 
-export const APP_VERSION = "1.1.0";
+export const APP_VERSION = "1.2.0";
 
 const DEFAULT: AppDisplaySettings = { reloadMinutes: 30 };
 

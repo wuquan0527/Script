@@ -1,5 +1,13 @@
-import { Divider, HStack, ProgressView, Spacer, Text, VStack } from "scripting";
-import { ProviderId } from "../class/api";
+import {
+  Divider,
+  HStack,
+  Image,
+  ProgressView,
+  Spacer,
+  Text,
+  VStack,
+} from "scripting";
+import { CheckinInfo, ProviderId } from "../class/api";
 import { Header } from "./comp/header";
 
 export interface WidgetData {
@@ -10,6 +18,8 @@ export interface WidgetData {
   unit: string;
   /** 请求次数（New API / one-api 谱系；其他供应商为 undefined） */
   requests?: number | null;
+  /** 签到状态（New API / Veloera 谱系；未部署签到功能时为 null/undefined） */
+  checkin?: CheckinInfo | null;
   planName?: string;
   extra?: string;
   /** 供应商预设，用于 Logo 的 fallback */
@@ -150,6 +160,45 @@ export function UsageProgress({ ratio }: { ratio: number | null }) {
   );
 }
 
+/** 今日签到文案：未部署签到功能时返回 null（界面隐藏该项） */
+export function checkinLabel(checkin?: CheckinInfo | null): string | null {
+  if (!checkin || !checkin.enabled) return null;
+  return checkin.checkedToday ? "今日已签到" : "今日未签到";
+}
+
+/** 签到徽标：已签到=绿色实心印章，未签到=橙色空印章 */
+export function CheckinBadge({
+  checkin,
+  compact = false,
+}: {
+  checkin?: CheckinInfo | null;
+  compact?: boolean;
+}) {
+  const label = checkinLabel(checkin);
+  if (label == null) return null;
+  const ok = checkin!.checkedToday;
+  const color = ok ? "systemGreen" : "systemOrange";
+  return (
+    <HStack spacing={3} alignment={"center"}>
+      <Image
+        systemName={ok ? "checkmark.seal.fill" : "seal"}
+        accessibilityHidden={true}
+        foregroundStyle={color}
+        resizable={true}
+        scaleToFit={true}
+        frame={{ width: 10, height: 10 }}
+      />
+      <Text
+        font={"caption2"}
+        foregroundStyle={color}
+        lineLimit={1}
+        minScaleFactor={0.7}>
+        {compact ? (ok ? "已签到" : "未签到") : label}
+      </Text>
+    </HStack>
+  );
+}
+
 export function View(props: WidgetData) {
   const { isValid, unit } = props;
   const ratio = usedRatio(props);
@@ -202,12 +251,18 @@ export function View(props: WidgetData) {
           {`请求 ${formatRequests(props.requests)} 次`}
         </Text>
       </HStack>
-      <Text
-        font={"caption2"}
-        foregroundStyle={"secondaryLabel"}
-        monospacedDigit={true}>
-        {`更新于 ${formatUpdateTime(props.updatedAt)}`}
-      </Text>
+      <HStack spacing={4} frame={{ maxWidth: "infinity" }}>
+        <CheckinBadge checkin={props.checkin} />
+        <Spacer />
+        <Text
+          font={"caption2"}
+          foregroundStyle={"secondaryLabel"}
+          monospacedDigit={true}
+          lineLimit={1}
+          minScaleFactor={0.7}>
+          {`更新于 ${formatUpdateTime(props.updatedAt)}`}
+        </Text>
+      </HStack>
     </VStack>
   );
 }
